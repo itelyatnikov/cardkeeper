@@ -128,7 +128,7 @@ function legalIn(c: CardData, f: Format) {
   if (f === 'casual') return !/\bUn-|Playtest/.test(c.setName) && c.legalities?.vintage !== 'not_legal' ? true : c.legalities?.vintage === 'legal';
   return c.legalities?.[f] === 'legal';
 }
-function popularity(c: CardData) {
+export function popularity(c: CardData) {
   if (!c.edhrecRank) return 0.15;
   return Math.max(0, 1 - Math.log10(c.edhrecRank) / Math.log10(40000));
 }

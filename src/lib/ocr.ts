@@ -1,4 +1,5 @@
 import { createWorker, PSM, type Worker } from 'tesseract.js';
+import { NAME_BAND } from './cameraGeometry';
 
 let workerP: Promise<Worker> | null = null;
 function getWorker() {
@@ -127,8 +128,9 @@ export async function readCardTitle(img: HTMLImageElement | HTMLCanvasElement, f
   };
   let raw = '';
   // 1) Title bar assuming the card fills the image.
-  const title = await ocrRegion(img, [0.04, 0.025, 0.74, 0.085], PSM.SINGLE_BLOCK);
+  const title = await ocrRegion(img, [NAME_BAND.x, NAME_BAND.y, NAME_BAND.w, NAME_BAND.h], PSM.SINGLE_BLOCK);
   const debugCrop = title.canvas.toDataURL('image/jpeg', 0.7);
+  if (typeof window !== 'undefined') (window as any).__ckLastCrop = debugCrop;
   raw += title.data.text + '\n';
   if ((title.data.confidence ?? 0) >= (framed ? 45 : 70)) push(title.data.text);
   if (framed && out.length && (title.data.confidence ?? 0) > 75) return { candidates: out, raw, debugCrop };

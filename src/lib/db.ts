@@ -98,3 +98,52 @@ export async function importAll(b: Backup, mode: 'merge' | 'replace') {
   await setMeta('groups', [...groups]);
   if (b.pricesUpdatedAt) await setMeta('pricesUpdatedAt', b.pricesUpdatedAt);
 }
+
+// ---------- owner groups ----------
+export const DEFAULT_GROUPS = ['Ari', 'Max', 'Zion'];
+const SCHEMA = 2;
+
+/** One-time data migrations for existing installs (runs on every app start, idempotent). */
+export async function migrate() {
+  const v = await getMeta<number>('schemaVersion', 1);
+  let groups = await getMeta<string[] | null>('groups', null);
+  if (groups === null) groups = [...DEFAULT_GROUPS]; // fresh install
+  if (v < 2 && !groups.includes('Zion')) groups = [...groups, 'Zion']; // v1 -> v2: add Zion
+  await setMeta('groups', groups);
+  if (v < SCHEMA) await setMeta('schemaVersion', SCHEMA);
+}
+
+export async function renameGroup(oldName: string, newName: string) {
+  const groups = await getMeta<string[]>('groups', []);
+  if (groups.includes(newName)) throw new Error(`“${newName}” already exists`);
+  await setMeta('groups', groups.map((g) => (g === oldName ? newName : g)));
+  const d = await db();
+  const tx = d.transaction(['collection', 'decks'], 'readwrite');
+  for (const e of await tx.objectStore('collection').getAll())
+    if (e.owners.includes(oldName)) tx.objectStore('collection').put({ ...e, owners: e.owners.map((o) => (o === oldName ? newName : o)) });
+  for (const k of await tx.objectStore('decks').getAll())
+    if (k.options.ownerGroup === oldName) tx.objectStore('decks').put({ ...k, options: { ...k.options, ownerGroup: newName } });
+  await tx.done;
+}
+
+export type DeleteGroupMode = { kind: 'untag' } | { kind: 'move'; to: string } | { kind: 'delete-cards' };
+
+/** Delete a group. untag: cards keep other owners; move: retag to another group; delete-cards: remove cards owned only by this group. */
+export async function deleteGroup(name: string, mode: DeleteGroupMode) {
+  const groups = await getMeta<string[]>('groups', []);
+  await setMeta('groups', groups.filter((g) => g !== name));
+  const d = await db();
+  const tx = d.transaction(['collection', 'decks'], 'readwrite');
+  const store = tx.objectStore('collection');
+  for (const e of await store.getAll()) {
+    if (!e.owners.includes(name)) continue;
+    let owners = e.owners.filter((o) => o !== name);
+    if (mode.kind === 'move' && !owners.includes(mode.to)) owners = [...owners, mode.to];
+    if (mode.kind === 'delete-cards' && owners.length === 0) store.delete(e.key);
+    else store.put({ ...e, owners });
+  }
+  for (const k of await tx.objectStore('decks').getAll())
+    if (k.options.ownerGroup === name)
+      tx.objectStore('decks').put({ ...k, options: { ...k.options, ownerGroup: mode.kind === 'move' ? mode.to : '__all__' } });
+  await tx.done;
+}

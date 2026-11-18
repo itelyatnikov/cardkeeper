@@ -1,31 +1,10 @@
-import { useState } from 'react';
 import { useStore } from '../lib/store';
-import { db, exportAll, importAll, getAllEntries, putEntry, type Backup } from '../lib/db';
+import { db, exportAll, importAll, type Backup } from '../lib/db';
+import { GroupsManager } from './Groups';
 import { games } from '../games';
 
 export function Settings() {
-  const { groups, setGroups, reload, toast, rows } = useStore();
-  const [newG, setNewG] = useState('');
-
-  async function addGroup() {
-    const g = newG.trim();
-    if (!g || groups.includes(g)) return;
-    await setGroups([...groups, g]);
-    setNewG('');
-  }
-  async function renameGroup(old: string) {
-    const n = prompt(`Rename “${old}” to:`, old)?.trim();
-    if (!n || n === old) return;
-    await setGroups(groups.map((g) => (g === old ? n : g)));
-    for (const e of await getAllEntries()) if (e.owners.includes(old)) await putEntry({ ...e, owners: e.owners.map((o) => (o === old ? n : o)) });
-    await reload();
-  }
-  async function removeGroup(g: string) {
-    if (!confirm(`Delete group “${g}”? Cards stay in the collection, just without this owner.`)) return;
-    await setGroups(groups.filter((x) => x !== g));
-    for (const e of await getAllEntries()) if (e.owners.includes(g)) await putEntry({ ...e, owners: e.owners.filter((o) => o !== g) });
-    await reload();
-  }
+  const { reload, toast } = useStore();
 
   async function doExport() {
     const data = await exportAll();
@@ -63,27 +42,7 @@ export function Settings() {
       <h1>Settings</h1>
       <section className="card-box">
         <h3>Owners / groups</h3>
-        <ul className="group-list">
-          {groups.map((g) => (
-            <li key={g}>
-              <span className="grow">
-                {g} <small className="muted">({rows.filter((r) => r.entry.owners.includes(g)).reduce((a, r) => a + r.entry.qty, 0)} cards)</small>
-              </span>
-              <button className="btn small" onClick={() => renameGroup(g)}>
-                Rename
-              </button>
-              <button className="btn small danger" onClick={() => removeGroup(g)}>
-                Delete
-              </button>
-            </li>
-          ))}
-        </ul>
-        <div className="row gap">
-          <input className="grow" value={newG} onChange={(e) => setNewG(e.target.value)} placeholder="New group (e.g. Trade binder)" onKeyDown={(e) => e.key === 'Enter' && addGroup()} />
-          <button className="btn primary" onClick={addGroup}>
-            Add
-          </button>
-        </div>
+        <GroupsManager />
       </section>
 
       <section className="card-box">
@@ -115,6 +74,9 @@ export function Settings() {
 
       <section className="card-box">
         <h3>About</h3>
+        <p className="small" data-testid="app-version">
+          CardKeeper v{__APP_VERSION__} <span className="muted">(build {__APP_BUILD__})</span>
+        </p>
         <p className="muted small">
           Card data, images and prices © Scryfall / Wizards of the Coast. This app is unofficial fan content. Card recognition runs on your phone (Tesseract OCR).
         </p>

@@ -6,7 +6,10 @@ import { loadImage, readCardTitle, warmUpOcr } from '../lib/ocr';
 import { resolveCandidates } from '../lib/match';
 import { mtgAdapter } from '../games/mtg/adapter';
 import { Chips, NameSearch, Sheet, Stepper } from './ui';
+import { EditGroupsButton } from './Groups';
+import { RatingBadge } from './Rating';
 import { fmtUsd, unitUsd } from '../lib/price';
+import { bandOf, CARD_ASPECT, cssRectToVideo, fitCardRect } from '../lib/cameraGeometry';
 
 type Recent = { key: string; name: string; qty: number; img: string };
 
@@ -108,7 +111,10 @@ export function Scan() {
       <h1>Scan cards</h1>
       <section className="card-box">
         <label className="lbl">Whose cards?</label>
-        <Chips options={groups.map((g) => ({ id: g, label: g }))} value={owners} onChange={setOwners} multi />
+        <div className="chips">
+          <Chips options={groups.map((g) => ({ id: g, label: g }))} value={owners} onChange={setOwners} multi />
+          <EditGroupsButton />
+        </div>
         <div className="row gap">
           <Chips<Finish>
             options={[
@@ -170,6 +176,7 @@ export function Scan() {
             <p className="muted">
               {match.setName} ({match.set.toUpperCase()}) #{match.collectorNumber} · {match.rarity}
             </p>
+            <RatingBadge card={match} />
             <p className="price-line">
               {fmtUsd(unitUsd(match, finish))} {finish !== 'nonfoil' ? finish : ''} each
             </p>
@@ -261,21 +268,25 @@ export function Scan() {
 
 function CameraView({ onClose, onCapture }: { onClose: () => void; onCapture: (c: HTMLCanvasElement) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+  const [ready, setReady] = useState(false);
+  const [box, setBox] = useState<{ w: number; h: number }>({ w: window.innerWidth, h: window.innerHeight });
 
   useEffect(() => {
     let stream: MediaStream | null = null;
+    let cancelled = false;
     (async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
           audio: false,
         });
+        if (cancelled) return stream.getTracks().forEach((t) => t.stop());
         const v = videoRef.current!;
         v.srcObject = stream;
         await v.play();
-        setDims({ w: v.videoWidth, h: v.videoHeight });
+        setReady(true);
       } catch (e: any) {
         setErr(
           e?.name === 'NotAllowedError'
@@ -284,58 +295,66 @@ function CameraView({ onClose, onCapture }: { onClose: () => void; onCapture: (c
         );
       }
     })();
-    return () => stream?.getTracks().forEach((t) => t.stop());
+    return () => {
+      cancelled = true;
+      stream?.getTracks().forEach((t) => t.stop());
+    };
   }, []);
 
-  // Card guide in video pixel coordinates.
-  const guide = (() => {
-    if (!dims) return null;
-    let h = dims.h * 0.88;
-    let w = (h * 63) / 88;
-    if (w > dims.w * 0.9) {
-      w = dims.w * 0.9;
-      h = (w * 88) / 63;
-    }
-    return { x: (dims.w - w) / 2, y: (dims.h - h) / 2, w, h };
-  })();
+  // Track the on-screen box (rotation, browser bars, resize).
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const upd = () => setBox({ w: el.clientWidth, h: el.clientHeight });
+    upd();
+    const ro = new ResizeObserver(upd);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Card guide in CSS px of the full-screen video box; the same rect is mapped
+  // to video pixels for the crop (object-fit: cover math in cameraGeometry).
+  const guide = fitCardRect(box.w, box.h, { top: 56, bottom: 150, side: 22 });
+  const band = bandOf(guide);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (ready && v?.videoWidth) (window as any).__ckGuideVideoRect = cssRectToVideo(guide, box.w, box.h, v.videoWidth, v.videoHeight);
+  });
 
   function capture() {
     const v = videoRef.current;
-    if (!v || !guide) return;
+    if (!v || !v.videoWidth) return;
+    const r = cssRectToVideo(guide, box.w, box.h, v.videoWidth, v.videoHeight);
     const c = document.createElement('canvas');
-    c.width = Math.round(guide.w);
-    c.height = Math.round(guide.h);
-    c.getContext('2d')!.drawImage(v, guide.x, guide.y, guide.w, guide.h, 0, 0, c.width, c.height);
+    // keep the card's true aspect; upscale small crops a little for OCR
+    const outW = Math.round(Math.max(r.w, 720));
+    c.width = outW;
+    c.height = Math.round(outW / CARD_ASPECT);
+    c.getContext('2d')!.drawImage(v, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
     onCapture(c);
   }
 
   return (
-    <div className="camera">
+    <div className="camera" ref={boxRef} data-testid="camera">
+      <video ref={videoRef} playsInline muted autoPlay />
       {err ? (
         <p className="cam-err">{err}</p>
       ) : (
-        <div className="cam-stage" style={dims ? { aspectRatio: `${dims.w}/${dims.h}` } : undefined}>
-          <video ref={videoRef} playsInline muted />
-          {guide && dims && (
-            <div
-              className="cam-guide"
-              style={{
-                left: `${(guide.x / dims.w) * 100}%`,
-                top: `${(guide.y / dims.h) * 100}%`,
-                width: `${(guide.w / dims.w) * 100}%`,
-                height: `${(guide.h / dims.h) * 100}%`,
-              }}
-            >
-              <div className="cam-title-zone">card name here</div>
-            </div>
-          )}
-        </div>
+        <>
+          <div className="cam-guide" data-testid="cam-guide" style={{ left: guide.x, top: guide.y, width: guide.w, height: guide.h }} />
+          <div className="cam-title-zone" data-testid="cam-band" style={{ left: band.x, top: band.y, width: band.w, height: band.h }}>
+          </div>
+          <p className="cam-hint" style={{ top: Math.max(8, guide.y - 44) }}>
+            Fit the card in the outline · name in the yellow box
+          </p>
+        </>
       )}
       <div className="cam-bar">
         <button className="btn" onClick={onClose}>
           Cancel
         </button>
-        <button className="shutter" onClick={capture} disabled={!guide} aria-label="Take picture" />
+        <button className="shutter" onClick={capture} disabled={!ready} aria-label="Take picture" data-testid="shutter" />
         <span style={{ width: 80 }} />
       </div>
     </div>

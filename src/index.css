@@ -188,13 +188,31 @@ select { width: auto; }
 .tabbar .on .ti { filter: none; transform: scale(1.1); }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(80px + env(safe-area-inset-bottom)); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 999px; z-index: 60; font-weight: 600; max-width: 90vw; text-align: center; }
 
-.camera { position: fixed; inset: 0; background: #000; z-index: 70; display: flex; flex-direction: column; justify-content: center; }
-.cam-stage { position: relative; width: 100%; max-height: calc(100dvh - 120px); margin: 0 auto; }
-.cam-stage video { width: 100%; height: 100%; display: block; }
-.cam-guide { position: absolute; border: 3px solid #fff; border-radius: 4.5%/3.2%; box-shadow: 0 0 0 9999px #0009; }
-.cam-title-zone { position: absolute; left: 4%; right: 22%; top: 2.5%; height: 8.5%; border: 2px dashed #ffd86b; border-radius: 6px; color: #ffd86b; font-size: 0.75rem; display: grid; place-items: center; font-weight: 700; }
-.cam-err { color: #fff; padding: 24px; text-align: center; }
+.camera { position: fixed; inset: 0; background: #000; z-index: 70; overflow: hidden; }
+.camera video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cam-guide { position: absolute; border: 3px solid #fff; border-radius: 3.5% / 2.5%; box-shadow: 0 0 0 200vmax #000a; pointer-events: none; box-sizing: border-box; }
+.cam-title-zone { position: absolute; border: 2px solid #ffd86b; background: #ffd86b22; border-radius: 6px; color: #ffd86b; font-size: 0.75rem; font-weight: 800; display: flex; align-items: center; padding-left: 8px; pointer-events: none; box-sizing: border-box; text-shadow: 0 1px 2px #000; }
+.cam-hint { position: absolute; left: 0; right: 0; margin: 0; text-align: center; color: #fff; font-weight: 700; font-size: 0.9rem; text-shadow: 0 1px 3px #000; padding: 0 16px; }
+.cam-err { position: absolute; inset: 30% 0 auto; color: #fff; padding: 24px; text-align: center; }
 .cam-bar { position: absolute; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; padding: 16px 20px calc(20px + env(safe-area-inset-bottom)); }
 .cam-bar .btn { background: #fff2; color: #fff; border-color: #fff4; width: 80px; }
 .shutter { width: 76px; height: 76px; border-radius: 50%; border: 5px solid #fff; background: #fff6; }
 .shutter:active { background: #fff; }
+.ghost-chip { background: transparent; border-style: dashed; }
+.radio-list { display: flex; flex-direction: column; gap: 12px; }
+.radio-list label { display: flex; align-items: center; gap: 8px; min-height: 44px; flex-wrap: wrap; }
+.radio-list input[type='radio'] { width: 22px; height: 22px; }
+.group-list li { min-height: 56px; }
+.rating { border-radius: 14px; padding: 10px 12px; background: var(--chip); border-left: 6px solid var(--g, var(--accent)); }
+.rating-head { display: flex; gap: 12px; align-items: center; }
+.rating-score { font-size: 2rem; font-weight: 900; color: var(--g); line-height: 1; min-width: 56px; }
+.rating-score small { font-size: 0.9rem; color: var(--muted); }
+.rating-reason { font-size: 0.85rem; color: var(--muted); }
+.rating details { margin-top: 6px; font-size: 0.85rem; }
+.rating summary { min-height: 36px; display: flex; align-items: center; font-weight: 650; }
+.rating-factors { list-style: none; padding: 0; margin: 4px 0; }
+.rating-factors .plus { color: var(--ok); font-weight: 800; display: inline-block; width: 40px; }
+.rating-factors .minus { color: var(--danger); font-weight: 800; display: inline-block; width: 40px; }
+.rating-pill { font-size: 0.72rem; font-weight: 800; padding: 1px 6px; border-radius: 999px; background: var(--g); color: #fff; }
+.g-S { --g: #e8a317; } .g-A { --g: #1d9a5b; } .g-B { --g: #3a7bd5; } .g-C { --g: #8a84a8; } .g-D { --g: #c0485a; }
+.update-banner { position: fixed; left: 12px; right: 12px; top: calc(env(safe-area-inset-top) + 10px); z-index: 90; min-height: 52px; border: 0; border-radius: 16px; background: var(--accent); color: #fff; font-weight: 800; font-size: 1rem; box-shadow: 0 6px 20px #0006; }

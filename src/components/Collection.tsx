@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useStore, type Row } from '../lib/store';
 import { Chips, ManaDot, MANA_COLORS, Sheet, Stepper } from './ui';
+import { EditGroupsButton } from './Groups';
+import { RatingBadge, ratingOf } from './Rating';
 import { fallbackPriceLabel, fmtUsd, unitUsd } from '../lib/price';
 import { addToCollection, deleteEntry, putEntry } from '../lib/db';
 import { mtgAdapter } from '../games/mtg/adapter';
@@ -9,7 +11,7 @@ import type { CardData, Finish } from '../games/types';
 const TYPES = ['Creature', 'Instant', 'Sorcery', 'Artifact', 'Enchantment', 'Planeswalker', 'Land', 'Battle'];
 const RARITIES = ['common', 'uncommon', 'rare', 'mythic'];
 const RANK: Record<string, number> = { common: 0, uncommon: 1, rare: 2, mythic: 3, special: 4, bonus: 4 };
-type SortKey = 'name' | 'value' | 'mv' | 'rarity' | 'set' | 'added' | 'qty';
+type SortKey = 'name' | 'value' | 'mv' | 'rarity' | 'set' | 'added' | 'qty' | 'rating';
 const ALL = '__all__';
 const NONE = '__none__';
 
@@ -65,6 +67,7 @@ export function Collection() {
       set: (a, b) => a.card.setName.localeCompare(b.card.setName) || a.card.collectorNumber.localeCompare(b.card.collectorNumber, undefined, { numeric: true }),
       added: (a, b) => b.entry.addedAt - a.entry.addedAt,
       qty: (a, b) => b.entry.qty - a.entry.qty,
+      rating: (a, b) => ratingOf(b.card).score - ratingOf(a.card).score || (b.unit ?? 0) - (a.unit ?? 0),
     };
     return out.sort(cmp[sort]);
   }, [rows, q, owner, colors, type, rarity, set, mv, foilOnly, minValue, sort]);
@@ -82,6 +85,7 @@ export function Collection() {
             {o.label}
           </button>
         ))}
+        <EditGroupsButton />
       </div>
       <div className="row gap">
         <input type="search" placeholder="Search name or type…" value={q} onChange={(e) => setQ(e.target.value)} className="grow" />
@@ -171,6 +175,7 @@ export function Collection() {
             <option value="added">Newest</option>
             <option value="name">Name</option>
             <option value="value">Value $</option>
+            <option value="rating">Deck rating</option>
             <option value="mv">Mana value</option>
             <option value="rarity">Rarity</option>
             <option value="set">Set</option>
@@ -196,7 +201,7 @@ export function Collection() {
               <img src={r.card.imageSmall} alt={r.card.name} loading="lazy" />
               {r.entry.qty > 1 && <span className="qty">×{r.entry.qty}</span>}
               <span className="cap">
-                {fmtUsd(r.unit)}
+                <RatingBadge card={r.card} compact /> {fmtUsd(r.unit)}
                 {r.entry.owners.length > 0 && <small> · {r.entry.owners.join(', ')}</small>}
               </span>
             </button>
@@ -215,7 +220,7 @@ export function Collection() {
                   {r.entry.finish !== 'nonfoil' && ' ✨'}
                   <br />
                   <small className="muted">
-                    {r.card.set.toUpperCase()} · {r.card.rarity} · {r.entry.owners.join(', ') || 'no owner'}
+                    <RatingBadge card={r.card} compact /> {r.card.set.toUpperCase()} · {r.card.rarity} · {r.entry.owners.join(', ') || 'no owner'}
                   </small>
                 </span>
                 <span className="val">
@@ -263,6 +268,7 @@ function CardDetail({ row, onClose }: { row: Row; onClose: () => void }) {
         <p className="muted">
           {card.typeLine} · {card.setName} ({card.set.toUpperCase()}) #{card.collectorNumber} · {card.rarity}
         </p>
+        <RatingBadge card={card} />
         <div className="prices">
           <div>
             <small>This copy</small>

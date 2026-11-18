@@ -36,6 +36,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [toastMsg, setToast] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
+    await db.migrate();
     const [e, c, g, pu] = await Promise.all([
       db.getAllEntries(),
       db.getAllCards(),
@@ -44,10 +45,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     ]);
     setEntries(e);
     setCards(new Map(c.map((x) => [x.id, x])));
-    if (g === null) {
-      await db.setMeta('groups', ['Ari', 'Max']);
-      setGroupsState(['Ari', 'Max']);
-    } else setGroupsState(g);
+    setGroupsState(g ?? db.DEFAULT_GROUPS);
     setPU(pu);
     setReady(true);
   }, []);
