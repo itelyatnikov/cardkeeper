@@ -99,8 +99,8 @@ await page.getByLabel('Close').first().click();
 
 // 5) card detail with rating + sort by rating
 await page.locator('.chips.scroll-x').getByRole('button', { name: 'Everyone' }).click();
-await page.getByLabel('Sort').selectOption('rating');
-await page.locator('.grid-card').first().click();
+await page.getByLabel('More sorts').selectOption('rating');
+await page.locator('.grid-card .tile').first().click();
 await page.getByTestId('rating').locator('summary').click();
 await page.waitForFunction(() => [...document.images].every((i) => i.complete && i.naturalWidth > 0));
 await page.waitForTimeout(2700);

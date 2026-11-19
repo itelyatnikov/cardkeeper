@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { useStore, type Row } from '../lib/store';
 import { Chips, ManaDot, MANA_COLORS, Sheet, Stepper } from './ui';
 import { EditGroupsButton } from './Groups';
+import { isLand } from '../games/mtg/roles';
+import { FavStar } from './FavStar';
 import { RatingBadge, ratingOf } from './Rating';
 import { fallbackPriceLabel, fmtUsd, unitUsd } from '../lib/price';
 import { addToCollection, deleteEntry, putEntry } from '../lib/db';
@@ -10,8 +12,15 @@ import type { CardData, Finish } from '../games/types';
 
 const TYPES = ['Creature', 'Instant', 'Sorcery', 'Artifact', 'Enchantment', 'Planeswalker', 'Land', 'Battle'];
 const RARITIES = ['common', 'uncommon', 'rare', 'mythic'];
-const RANK: Record<string, number> = { common: 0, uncommon: 1, rare: 2, mythic: 3, special: 4, bonus: 4 };
-type SortKey = 'name' | 'value' | 'mv' | 'rarity' | 'set' | 'added' | 'qty' | 'rating';
+// mythic > rare > uncommon > common > special/bonus (basic lands are common and fall in with commons)
+const RANK: Record<string, number> = { mythic: 4, rare: 3, uncommon: 2, common: 1, special: 0, bonus: 0 };
+const SORT_KEY = 'ck.sort';
+type SortKey = 'favorites' | 'rarity' | 'value' | 'rating' | 'name' | 'mv' | 'set' | 'added' | 'qty';
+const MAIN_SORTS: { id: SortKey; label: string }[] = [
+  { id: 'favorites', label: '★ Favorites' },
+  { id: 'rarity', label: '💎 Rarity' },
+  { id: 'value', label: '$ Price' },
+];
 const ALL = '__all__';
 const NONE = '__none__';
 
@@ -26,7 +35,11 @@ export function Collection() {
   const [mv, setMv] = useState('');
   const [minValue, setMinValue] = useState('');
   const [foilOnly, setFoilOnly] = useState(false);
-  const [sort, setSort] = useState<SortKey>('added');
+  const [sort, setSortState] = useState<SortKey>(() => (localStorage.getItem(SORT_KEY) as SortKey) || 'rarity');
+  const setSort = (k: SortKey) => {
+    setSortState(k);
+    localStorage.setItem(SORT_KEY, k);
+  };
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [showFilters, setShowFilters] = useState(false);
   const [detail, setDetail] = useState<Row | null>(null);
@@ -59,19 +72,27 @@ export function Collection() {
       if (minValue && (r.unit ?? 0) < Number(minValue)) return false;
       return true;
     });
+    const byRarity = (a: Row, b: Row) => (RANK[b.card.rarity] ?? 0) - (RANK[a.card.rarity] ?? 0) || a.card.name.localeCompare(b.card.name);
     const cmp: Record<SortKey, (a: Row, b: Row) => number> = {
+      favorites: byRarity,
       name: (a, b) => a.card.name.localeCompare(b.card.name),
-      value: (a, b) => (b.unit ?? -1) - (a.unit ?? -1),
+      value: (a, b) => (b.unit ?? -1) - (a.unit ?? -1) || a.card.name.localeCompare(b.card.name),
       mv: (a, b) => a.card.cmc - b.card.cmc || a.card.name.localeCompare(b.card.name),
-      rarity: (a, b) => (RANK[b.card.rarity] ?? 0) - (RANK[a.card.rarity] ?? 0),
+      rarity: byRarity,
       set: (a, b) => a.card.setName.localeCompare(b.card.setName) || a.card.collectorNumber.localeCompare(b.card.collectorNumber, undefined, { numeric: true }),
       added: (a, b) => b.entry.addedAt - a.entry.addedAt,
       qty: (a, b) => b.entry.qty - a.entry.qty,
       rating: (a, b) => ratingOf(b.card).score - ratingOf(a.card).score || (b.unit ?? 0) - (a.unit ?? 0),
     };
-    return out.sort(cmp[sort]);
+    // Favorites are always pinned to the top; the chosen sort applies within favorites and within the rest.
+    const fav = (r: Row) => (r.entry.favorite ? 1 : 0);
+    return out.sort((a, b) => fav(b) - fav(a) || cmp[sort](a, b));
   }, [rows, q, owner, colors, type, rarity, set, mv, foilOnly, minValue, sort]);
 
+  const sections: [string, Row[]][] = [
+    ['Spells', filtered.filter((r) => !isLand(r.card))],
+    ['Lands', filtered.filter((r) => isLand(r.card))],
+  ];
   const copies = filtered.reduce((a, r) => a + r.entry.qty, 0);
   const value = filtered.reduce((a, r) => a + r.value, 0);
   const activeFilters = [colors.length, type, rarity, set, mv, foilOnly, minValue].filter(Boolean).length;
@@ -171,20 +192,32 @@ export function Collection() {
           <b>{filtered.length}</b> cards · <b>{copies}</b> copies · <b>{fmtUsd(value)}</b>
         </span>
         <span className="row gap">
-          <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sort">
-            <option value="added">Newest</option>
-            <option value="name">Name</option>
-            <option value="value">Value $</option>
+          <select
+            value={MAIN_SORTS.some((m) => m.id === sort) ? '' : sort}
+            onChange={(e) => e.target.value && setSort(e.target.value as SortKey)}
+            aria-label="More sorts"
+            className={MAIN_SORTS.some((m) => m.id === sort) ? '' : 'on-select'}
+          >
+            <option value="">More…</option>
             <option value="rating">Deck rating</option>
+            <option value="name">Name</option>
             <option value="mv">Mana value</option>
-            <option value="rarity">Rarity</option>
             <option value="set">Set</option>
+            <option value="added">Newest</option>
             <option value="qty">Quantity</option>
           </select>
           <button className="icon-btn" onClick={() => setView(view === 'grid' ? 'list' : 'grid')} aria-label="Toggle view">
             {view === 'grid' ? '☰' : '▦'}
           </button>
         </span>
+      </div>
+
+      <div className="segmented" role="group" aria-label="Sort by" data-testid="sort-buttons">
+        {MAIN_SORTS.map((m) => (
+          <button key={m.id} className={sort === m.id ? 'on' : ''} aria-pressed={sort === m.id} onClick={() => setSort(m.id)}>
+            {m.label}
+          </button>
+        ))}
       </div>
 
       {rows.length === 0 && (
@@ -194,44 +227,57 @@ export function Collection() {
         </div>
       )}
 
-      {view === 'grid' ? (
-        <div className="grid">
-          {filtered.map((r) => (
-            <button key={r.entry.key} className={`grid-card ${r.entry.finish !== 'nonfoil' ? 'foil' : ''}`} onClick={() => setDetail(r)}>
-              <img src={r.card.imageSmall} alt={r.card.name} loading="lazy" />
-              {r.entry.qty > 1 && <span className="qty">×{r.entry.qty}</span>}
-              <span className="cap">
-                <RatingBadge card={r.card} compact /> {fmtUsd(r.unit)}
-                {r.entry.owners.length > 0 && <small> · {r.entry.owners.join(', ')}</small>}
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <ul className="list">
-          {filtered.map((r) => (
-            <li key={r.entry.key}>
-              <button onClick={() => setDetail(r)}>
-                <img src={r.card.imageSmall} alt="" loading="lazy" />
-                <span className="grow">
-                  <b>
-                    {r.entry.qty}× {r.card.name}
-                  </b>
-                  {r.entry.finish !== 'nonfoil' && ' ✨'}
-                  <br />
-                  <small className="muted">
-                    <RatingBadge card={r.card} compact /> {r.card.set.toUpperCase()} · {r.card.rarity} · {r.entry.owners.join(', ') || 'no owner'}
-                  </small>
-                </span>
-                <span className="val">
-                  {fmtUsd(r.value)}
-                  <br />
-                  <small className="muted">{fmtUsd(r.unit)} ea</small>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+      {sections.map(([title, list]) =>
+        list.length === 0 ? null : (
+          <section key={title} className="coll-section" data-testid={`section-${title}`}>
+            <h2 className="section-head">
+              {title === 'Lands' ? '🏔️ Lands' : '✨ Spells & creatures'} <small className="muted">({list.reduce((a, r) => a + r.entry.qty, 0)})</small>
+            </h2>
+            {view === 'grid' ? (
+              <div className="grid">
+                {list.map((r) => (
+                  <div key={r.entry.key} className={`grid-card ${r.entry.finish !== 'nonfoil' ? 'foil' : ''} ${r.entry.favorite ? 'fav' : ''}`}>
+                    <button className="tile" onClick={() => setDetail(r)}>
+                      <img src={r.card.imageSmall} alt={r.card.name} loading="lazy" />
+                      {r.entry.qty > 1 && <span className="qty">×{r.entry.qty}</span>}
+                      <span className="cap">
+                        <RatingBadge card={r.card} compact /> {fmtUsd(r.unit)}
+                        {r.entry.owners.length > 0 && <small> · {r.entry.owners.join(', ')}</small>}
+                      </span>
+                    </button>
+                    <FavStar entryKey={r.entry.key} on={!!r.entry.favorite} name={r.card.name} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <ul className="list">
+                {list.map((r) => (
+                  <li key={r.entry.key} className="row">
+                    <FavStar entryKey={r.entry.key} on={!!r.entry.favorite} name={r.card.name} inline />
+                    <button onClick={() => setDetail(r)}>
+                      <img src={r.card.imageSmall} alt="" loading="lazy" />
+                      <span className="grow">
+                        <b>
+                          {r.entry.qty}× {r.card.name}
+                        </b>
+                        {r.entry.finish !== 'nonfoil' && ' ✨'}
+                        <br />
+                        <small className="muted">
+                          <RatingBadge card={r.card} compact /> {r.card.set.toUpperCase()} · {r.card.rarity} · {r.entry.owners.join(', ') || 'no owner'}
+                        </small>
+                      </span>
+                      <span className="val">
+                        {fmtUsd(r.value)}
+                        <br />
+                        <small className="muted">{fmtUsd(r.unit)} ea</small>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ),
       )}
       {detail && <CardDetail row={detail} onClose={() => setDetail(null)} />}
     </div>
@@ -248,7 +294,7 @@ function CardDetail({ row, onClose }: { row: Row; onClose: () => void }) {
   async function save() {
     if (card.id !== row.card.id) {
       await deleteEntry(entry.key);
-      await addToCollection(card, entry.qty, entry.finish, entry.owners);
+      await addToCollection(card, entry.qty, entry.finish, entry.owners, entry.favorite);
     } else await putEntry(entry);
     await reload();
     toast('Saved');
@@ -291,8 +337,11 @@ function CardDetail({ row, onClose }: { row: Row; onClose: () => void }) {
             </div>
           )}
         </div>
-        <label className="lbl">Owners</label>
-        <Chips options={groups.map((g) => ({ id: g, label: g }))} value={entry.owners} onChange={(o) => setEntry({ ...entry, owners: o })} multi />
+        <div className="row gap">
+          <FavStar entryKey={entry.key} on={!!entry.favorite} name={card.name} inline onChange={(f) => setEntry((e) => ({ ...e, favorite: f }))} label />
+        </div>
+        <label className="lbl">Owner</label>
+        <Chips options={groups.map((g) => ({ id: g, label: g }))} value={entry.owners.slice(0, 1)} onChange={(o) => setEntry({ ...entry, owners: o })} />
         <label className="lbl">Finish</label>
         <Chips<Finish>
           options={[

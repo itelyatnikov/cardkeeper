@@ -50,7 +50,8 @@ export interface CollectionEntry {
   cardId: string;
   qty: number;
   finish: Finish;
-  owners: string[]; // group tags e.g. ["Ari"]
+  owners: string[]; // group tags e.g. ["Ari"] (UI assigns one owner per card)
+  favorite?: boolean;
   addedAt: number;
 }
 

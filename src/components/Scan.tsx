@@ -18,6 +18,7 @@ export function Scan() {
   const [owners, setOwners] = useState<string[]>(groups.slice(0, 1));
   const [finish, setFinish] = useState<Finish>('nonfoil');
   const [qty, setQty] = useState(1);
+  const [fav, setFav] = useState(false);
   const [match, setMatch] = useState<CardData | null>(null);
   const [status, setStatus] = useState<string>('');
   const [busy, setBusy] = useState(false);
@@ -29,7 +30,7 @@ export function Scan() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!owners.length && groups.length) setOwners([groups[0]]);
+    if ((!owners.length || !groups.includes(owners[0])) && groups.length) setOwners([groups[0]]);
   }, [groups]); // eslint-disable-line
 
   async function recognize(img: HTMLImageElement | HTMLCanvasElement, framed: boolean) {
@@ -84,12 +85,13 @@ export function Scan() {
 
   async function add() {
     if (!match) return;
-    const e = await addToCollection(match, qty, finish, owners);
+    const e = await addToCollection(match, qty, finish, owners.slice(0, 1), fav);
     setRecent((r) => [{ key: e.key, name: match.name, qty, img: match.imageSmall }, ...r].slice(0, 20));
     await reload();
     toast(`Added ${qty}× ${match.name}${owners.length ? ` to ${owners.join(' + ')}` : ''}`);
     setMatch(null);
     setQty(1);
+    setFav(false);
     setStatus('Ready for the next card!');
     setCrop(undefined);
     setOcrLines([]);
@@ -110,9 +112,9 @@ export function Scan() {
     <div className="page">
       <h1>Scan cards</h1>
       <section className="card-box">
-        <label className="lbl">Whose cards?</label>
+        <label className="lbl">Whose cards? <small className="muted">(one owner)</small></label>
         <div className="chips">
-          <Chips options={groups.map((g) => ({ id: g, label: g }))} value={owners} onChange={setOwners} multi />
+          <Chips options={groups.map((g) => ({ id: g, label: g }))} value={owners} onChange={setOwners} />
           <EditGroupsButton />
         </div>
         <div className="row gap">
@@ -182,6 +184,9 @@ export function Scan() {
             </p>
             <div className="row gap wrap">
               <Stepper value={qty} onChange={setQty} />
+              <button className={`fav-star inline ${fav ? 'on' : ''}`} aria-pressed={fav} aria-label="Favorite" onClick={() => setFav(!fav)} data-testid="scan-fav">
+                {fav ? '★' : '☆'}
+              </button>
               <button className="btn primary" onClick={add} data-testid="add-btn">
                 ✅ Add {qty}
               </button>

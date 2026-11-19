@@ -42,17 +42,18 @@ export const getMeta = async <T,>(k: string, def: T): Promise<T> => ((await (awa
 export const setMeta = async (k: string, v: any) => (await db()).put('meta', v, k);
 
 /** Add a card to the collection, merging with an identical entry (same printing, finish, owners). */
-export async function addToCollection(card: CardData, qty: number, finish: CollectionEntry['finish'], owners: string[]) {
+export async function addToCollection(card: CardData, qty: number, finish: CollectionEntry['finish'], owners: string[], favorite = false) {
   await putCards([card]);
   const all = await (await db()).getAllFromIndex('collection', 'byCard', card.id);
   const key = [...owners].sort().join('|');
   const same = all.find((e) => e.finish === finish && [...e.owners].sort().join('|') === key);
   if (same) {
     same.qty += qty;
+    if (favorite) same.favorite = true;
     await putEntry(same);
     return same;
   }
-  const e: CollectionEntry = { key: uid(), game: card.game, cardId: card.id, qty, finish, owners, addedAt: Date.now() };
+  const e: CollectionEntry = { key: uid(), game: card.game, cardId: card.id, qty, finish, owners, favorite, addedAt: Date.now() };
   await putEntry(e);
   return e;
 }
@@ -91,7 +92,7 @@ export async function importAll(b: Backup, mode: 'merge' | 'replace') {
   }
   await putCards(b.cards ?? []);
   const tx = d.transaction(['collection', 'decks'], 'readwrite');
-  for (const e of b.collection ?? []) tx.objectStore('collection').put(e);
+  for (const e of b.collection ?? []) tx.objectStore('collection').put({ ...e, favorite: e.favorite ?? false });
   for (const k of b.decks ?? []) tx.objectStore('decks').put(k);
   await tx.done;
   const groups = new Set([...(mode === 'merge' ? await getMeta('groups', [] as string[]) : []), ...(b.groups ?? [])]);
@@ -101,7 +102,7 @@ export async function importAll(b: Backup, mode: 'merge' | 'replace') {
 
 // ---------- owner groups ----------
 export const DEFAULT_GROUPS = ['Ari', 'Max', 'Zion'];
-const SCHEMA = 2;
+const SCHEMA = 3;
 
 /** One-time data migrations for existing installs (runs on every app start, idempotent). */
 export async function migrate() {
@@ -110,6 +111,13 @@ export async function migrate() {
   if (groups === null) groups = [...DEFAULT_GROUPS]; // fresh install
   if (v < 2 && !groups.includes('Zion')) groups = [...groups, 'Zion']; // v1 -> v2: add Zion
   await setMeta('groups', groups);
+  if (v < 3) {
+    // v2 -> v3: favorites flag on every collection entry
+    const d = await db();
+    const tx = d.transaction('collection', 'readwrite');
+    for (const e of await tx.store.getAll()) if (e.favorite === undefined) tx.store.put({ ...e, favorite: false });
+    await tx.done;
+  }
   if (v < SCHEMA) await setMeta('schemaVersion', SCHEMA);
 }
 
@@ -146,4 +154,11 @@ export async function deleteGroup(name: string, mode: DeleteGroupMode) {
     if (k.options.ownerGroup === name)
       tx.objectStore('decks').put({ ...k, options: { ...k.options, ownerGroup: mode.kind === 'move' ? mode.to : '__all__' } });
   await tx.done;
+}
+
+export async function toggleFavorite(key: string) {
+  const d = await db();
+  const e = await d.get('collection', key);
+  if (e) await d.put('collection', { ...e, favorite: !e.favorite });
+  return !e?.favorite;
 }
